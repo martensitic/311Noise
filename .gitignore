@@ -2,5 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-dfNoise.RData
+*.RData
 medianAskingRent_All.csv
+log.txt
+report.log
+
