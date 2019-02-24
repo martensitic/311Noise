@@ -4,6 +4,6 @@
 .Ruserdata
 *.RData
 medianAskingRent_All.csv
-log.txt
+parallel.log.txt
 report.log
 
