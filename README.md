@@ -2,7 +2,7 @@
 Data science project on NYC noise complaints.
 
 ## Files included
-MLnoise.R:  assembly of data sets and training of the machine learining model.  Saves data and output for report generation.  Be aware that the data download takes some minutes, and the training takes some minutes more.
+MLnoise.R:  assembly of data sets and training of the machine learning model.  Saves data and output for report generation.  Be aware that the data download takes some minutes, and the training takes some minutes more.
 
 report.rmd: Generates report from the data sets saved by MLnoise.R.  Will not work if you don't run MLnoise.R first.
 
