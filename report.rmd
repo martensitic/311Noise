@@ -186,7 +186,7 @@ cdMap <- ggmap(nyc, darken = 0.6) +
 cdMap
 ```
 
-`r margin_note("These asking rents only circumstantially characterize wider housing costs. They represent what one might pay if forced to move in a given month---perhaps due to noise complaints.")`Finally, real estate database company Streeteasy publishes [aggregate sales and rental listing data](https://streeteasy.com/blog/data-dashboard/) for the New York City market.  Monthly median rents back to 2010 are available for most neighborhoods, as well as on a borough and citywide basis.
+`r margin_note("These asking rents only circumstantially characterize wider housing costs. They represent what one might pay if forced to move in a given month---perhaps due to noise complaints.")`Finally, real estate database company Streeteasy publishes [aggregate sales and rental listing data](https://streeteasy.com/blog/data-dashboard/) for the New York City market.  Monthly median rents back to 2010 are available for most neighborhoods, as well as on a borough- and city-wide basis.
 
 Since local neighborhood boundaries are rather colloquially defined[^3], and are in any case not included with the Streeteasy figures, I had to manually match listing neighborhoods to the larger community districts.
 
@@ -212,7 +212,7 @@ To gather the 311 data, I used the [Socrata Open Data API](https://dev.socrata.c
 
 [^4]: The city collects these complaints because the taxi dispatch also tends to discard them.
 
-Before reading too much into this, it's important to recognize what these complaints can tell us and what they can't.  The location information represents the target of the complaint, not who lodged the complaint or where they were located, which is not public.  There is also not necessarily any connection to actual noise level, and in fact even the number of complaints may not necessarily scale with severity, since one unhappy person can lodge dozens or hundreds of submissions.
+Before reading too much into this, it's important to recognize what these complaints can tell us and what they can't.  The location information represents the target of the complaint, not who lodged the complaint or where they were located, which is not public.  There is also not necessarily any connection to actual noise level, and in fact even the number of complaints may not necessarily indicate severity, since one unhappy person can lodge dozens or hundreds of submissions.
 
 As an example, a heatmap comparison of complaint density between 2015 and 2018 appears to reveal a significant new hot spot near St. John's University[^20] in Queens community district 8.  Is there some new (or newly-significant) source of noise that has riled up the neighbors?
 
@@ -446,6 +446,7 @@ Again, while each individual district shows its own trend, there is a general po
 [^8]: Each scatter describes a personality of sorts. Inwood, CD12 on the left? Sensible but complains a lot. Midtown, CD5 on the right? Extravagant and just as prone. Upper East Side, CD8 in the middle? Actually pretty laid back.
 
 Let's try to address the ultimate question that follows: what are the districts that combine affordable rent and a low complaint rate?  Taking this on for the most recent year of data, I tagged each district with its highest monthly rent and highest monthly complaint rate for 2018, producing a worst-case condition[^9] for comparison.
+\vspace{10mm}
 
 [^9]: Everyone is complaining, and everything is expensive. Welcome to New York.
 
@@ -563,9 +564,9 @@ Interestingly, the highest error outlier at `r round(tabMAE$MAE[1], 1)` complain
 
 `r margin_note("I did attempt to predict each individual noise complaint. Unfortunately, the noise complaint landscape overwhelmingly tilts toward Party/Music gripes, which seem like the most likely outcome at any time of day or night in any corner of New York City. No model could do much better than simply predicing that every 311 noise complaint was likely to be about someone else's loud music.")`There may also be more useful outcomes to model than the complaint rate in each month; why not try to predict at the individual complaint level? Having an idea of the complaint descriptor or the agency with jurisdiction ahead of time might make the 311 intake system a little more efficient.
 
-Still, the relationship between noise complaints and housing cost proved to be interesting, revealing that while complaints do increase with rent, some parts of New York City just complain more than others, whether because of their actual soundscape or because of other factors (such as the diversity study mentioned in the [Related Work](#related)).  I expect that the insight I gained into these geographic variations will prove valuable the next time I have to find a new apartment.[^31]
+Still, the relationship between noise complaints and housing cost turned out to be interesting, revealing that while complaints do increase with rent, some parts of New York City just complain more than others, whether because of their actual soundscape or because of other factors (such as the diversity study mentioned in the [Related Work](#related)).  I expect that this geographic insight will prove valuable the next time I have to find a new apartment.[^31]
 
-[^31]: In the time it has taken you to read this report I moved twice.
+[^31]: In the time it has taken you to read this report my rent went up twice.
 
 # Acknowledgments
 
