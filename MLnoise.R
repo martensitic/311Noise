@@ -1,3 +1,11 @@
+#####
+# MLnoise.R:
+# Script to download and train a model on noise complaint data
+# Martin Schiff 2/24/2019
+
+
+#####
+# Check for required libraries
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(doParallel)) install.packages("doParallel", repos = "http://cran.us.r-project.org")
@@ -5,11 +13,10 @@ if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-
 if(!require(RSocrata)) install.packages("RSocrata", repos = "http://cran.us.r-project.org")
 if(!require(Rborist)) install.packages("Rborist", repos = "http://cran.us.r-project.org")
 
-##########################################
+#####
 # Pull the public data sets
 
-
-# My SODA App token to avoid throttling
+# SODA App token to avoid throttling
 token <- "JNHB3MHkIFRbMn4r24dddAYAy"
 
 # NYC 311 Service Requests from 2010 to Present API
@@ -42,7 +49,7 @@ cdPop <- read.socrata(caturl, app_token=token) %>%
 # Download monthly median rents by neighborhood from Streeteasy
 dl <- tempfile()
 download.file("https://streeteasy-market-data-download.s3.amazonaws.com/rentals/All/medianAskingRent_All.zip", dl)
-rents <- read_csv(unzip(dl, "medianAskingRent_All.csv")) %>%
+rents <- read_csv(unzip(dl)) %>%
   rename(borough = Borough)
 
 # split rents into whole boro and neighborhood, and tidy with one row per month
@@ -59,15 +66,16 @@ hoodRents <- rents %>%
   select(-areaType)
 
 # crosswalk hood names to community districts
-download.file("https://raw.githubusercontent.com/martensitic/311Noise/master/hoodCD.csv", "hoodCD.csv")
-hoodCD <- read_csv("hoodCD.csv") %>%
+dl <- tempfile()
+download.file("https://raw.githubusercontent.com/martensitic/311Noise/master/resource/hoodCD.csv", dl)
+hoodCD <- read_csv(dl) %>%
   mutate(cd = str_c(str_pad(cd, 2, side="left", pad="0"), " ", toupper(borough))) %>%
   select(-borough)
 
 # stop all the downloadin
-rm(args, catargs, caturl, token, url, dl)
+rm(args, catargs, caturl, token, url, dl, rents)
 
-##########################
+#####
 # Assemble a reasonable benchmark rent for each community district.
 # We take the mean of all available neighborhood median rents in the district for that month.
 # Staten island only has boro-wide data so we fill that in for its 3 districts
@@ -78,16 +86,16 @@ rm(args, catargs, caturl, token, url, dl)
 cdRents <- hoodRents %>%
   left_join(hoodCD, by = "areaName") %>%
   group_by(cd) %>%
-  summarize_at(vars(starts_with("2")), funs(mean(., na.rm=TRUE))) %>%
+  summarize_at(vars(starts_with("2")), list(~mean(., na.rm=TRUE))) %>%
   gather(month, rent, -cd) %>% 
   spread(cd,rent) %>%
   mutate(`01 STATEN ISLAND` = boroRents$`STATEN ISLAND`,
          `02 STATEN ISLAND` = boroRents$`STATEN ISLAND`,
          `03 STATEN ISLAND` = boroRents$`STATEN ISLAND`) %>%
-  mutate_at(vars(ends_with("BRONX")), funs(if_else(is.nan(.), boroRents$BRONX, .))) %>%
-  mutate_at(vars(ends_with("BROOKLYN")), funs(if_else(is.nan(.), boroRents$BROOKLYN, .))) %>%
-  mutate_at(vars(ends_with("MANHATTAN")), funs(if_else(is.nan(.), boroRents$MANHATTAN, .))) %>%
-  mutate_at(vars(ends_with("QUEENS")), funs(if_else(is.nan(.), boroRents$QUEENS, .))) %>%
+  mutate_at(vars(ends_with("BRONX")), list(~if_else(is.nan(.), boroRents$BRONX, .))) %>%
+  mutate_at(vars(ends_with("BROOKLYN")), list(~if_else(is.nan(.), boroRents$BROOKLYN, .))) %>%
+  mutate_at(vars(ends_with("MANHATTAN")), list(~if_else(is.nan(.), boroRents$MANHATTAN, .))) %>%
+  mutate_at(vars(ends_with("QUEENS")), list(~if_else(is.nan(.), boroRents$QUEENS, .))) %>%
   mutate(month = as_date(parse_date_time(month, orders = "ym", tz = "America/New_York"))) 
 
 #####
@@ -126,12 +134,13 @@ testSet <- noiseCDMonth %>%
 # which also scales/centers numerics
 preProc <- preProcess(trainSet %>% select(-rate), method=c("knnImpute"))
 
+# generate preprocessed train and test sets, detatching and re-attaching the
+# rate outcome so it doesn't get scaled
 ppTrainSet <- predict(preProc, newdata = trainSet %>% select(-rate)) %>%
   mutate(rate = trainSet$rate)
 
 ppTestSet <- predict(preProc, newdata = testSet %>% select(-rate)) %>%
   mutate(rate = testSet$rate)
-
 
 # random forest prediciton using Rborist
 rfGrid <- expand.grid(predFixed = c(18,19,20,21,22), minNode = 7)
@@ -141,8 +150,8 @@ tc <- trainControl(method = "boot",
                    verboseIter = TRUE,
                    allowParallel = TRUE)
 
-# start parallel cluster to speed things up
-cl <- makePSOCKcluster(2, outfile = "log.txt")
+# start a parallel cluster to speed things up
+cl <- makePSOCKcluster(2, outfile = "parallel.log.txt")
 registerDoParallel(cl)
 
 rfFit <- train(rate ~ ., 
@@ -160,6 +169,7 @@ rfTest <- predict(rfFit, ppTestSet)
 rfTest[rfTest < 0] <- 0
 rfRMSE <- RMSE(rfTest, ppTestSet$rate)
 rfMAE <- MAE(rfTest, ppTestSet$rate)
+print(str_c("Test set RMSE is ", rfRMSE, " and MAE is ", rfMAE, "."))
 
 # save some output for use in the report
 save(rfFit, testSet, ppTestSet, rfTest, rfRMSE, rfMAE, file = "mlOutput.RData")

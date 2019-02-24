@@ -4,12 +4,16 @@ subtitle: "Noise Complaints and Housing Cost in New York City"
 author: "Martin Schiff"
 date: "`r Sys.Date()`"
 output:
-  tufte::tufte_html: default
-  pdf_document: default
-  tufte::tufte_book: default
-  html_document: default
   tufte::tufte_handout: default
+  tufte::tufte_html: default
 ---
+
+\hypersetup{
+  colorlinks = false,
+  pdfborder = {0 0 1},
+  linkbordercolor = lightgray,
+  urlbordercolor = lightgray
+}
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(include=FALSE)
@@ -24,7 +28,10 @@ if(!require(ggmap)) install.packages("ggmap", repos = "http://cran.us.r-project.
 if(!require(ggrepel)) install.packages("ggrepel", repos = "http://cran.us.r-project.org")
 if(!require(tufte)) install.packages("tufte", repos = "http://cran.us.r-project.org")
 if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 ```
+
+
 
 ```{r download}
 #####
@@ -56,9 +63,7 @@ cityPop <- sum(cdPop$pop2010)
 # Download monthly median rents by neighborhood from Streeteasy
 dl <- tempfile()
 download.file("https://streeteasy-market-data-download.s3.amazonaws.com/rentals/All/medianAskingRent_All.zip", dl)
-rents <- read_csv(unzip(dl, "medianAskingRent_All.csv")) %>%
-  rename(borough = Borough)
-rents <- read_csv("medianAskingRent_All.csv") %>%
+rents <- read_csv(unzip(dl)) %>%
   rename(borough = Borough)
 
 # split rents into whole boro and neighborhood, and tidy with one row per month
@@ -79,8 +84,9 @@ cityRents <- rents %>%
   select(-areaType, -borough)
   
 # crosswalk hood names to community districts
-download.file("https://raw.githubusercontent.com/martensitic/311Noise/master/hoodCD.csv", "hoodCD.csv")
-hoodCD <- read_csv("hoodCD.csv") %>%
+dl <- tempfile()
+download.file("https://raw.githubusercontent.com/martensitic/311Noise/master/resource/hoodCD.csv", dl)
+hoodCD <- read_csv(dl) %>%
   mutate(cd = str_c(str_pad(cd, 2, side="left", pad="0"), " ", toupper(borough))) %>%
   select(-borough)
 
@@ -93,23 +99,26 @@ dfCD <- dfCD %>% mutate(boro = factor(str_sub(boro_cd, end = 1), labels = boros)
                        boro = NULL, cd = NULL)
 
 # stop all the downloadin
-rm(args, caturl, token, url, dl, boros)
+rm(args, caturl, token, url, dl, boros, rents)
 ```
 
 
 > \
+> \
 > _Ain't nothing goin' on now\
 > But the rent, ah_
->
+> 
 > `r quote_footer('--- James Brown')`
->
+> \
+> \
 
 > _Pretty girls, pretty boys\
 > Have you ever heard your mommy shout\
 > Noise annoys_
->
-> `r quote_footer('--- Pete Shelley')`
 > 
+> `r quote_footer('--- Pete Shelley')`
+> \
+> \
 
 # Introduction
 
@@ -122,11 +131,11 @@ My line of work is acoustics, but on the side I also dabble in rent anxiety and 
 
 [^1]: This, the holy grail of the working acoustician.
 
-For this capstone project in the HarvardX [Data Science (PH125x) course series](https://www.edx.org/professional-certificate/harvardx-data-science), I examine over nine years of New York City noise complaint records. A mash-up with neighborhood rent allows comparison on a local level, with sufficient breadth to train a machine learning model for projection of future complaints.
+For this capstone project in the HarvardX Data Science course series, I examine over nine years of New York City noise complaint records. A mashup with neighborhood rent allows comparison on a local level, with sufficient breadth to train a machine learning model for projection of future complaints.
 
 ## Data Overview
 
-New York City has a 311 telphone hotline for access to city services, enhanced in recent years with web and app portals. One of its many functions is to collect and assign noise complaints to city agencies for enforcement.[^2] As part of its Open Data initiative, the city provides access to the [311 database from 2010 to the present](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9), updated nightly.  Each call (or online submission) is logged with the time, nature of the complaint, and geovalidated location information on the site of the issue.
+New York City has a 311 telephone hotline for access to city services, enhanced in recent years with web and app portals. One of its many functions is to collect and assign noise complaints to city agencies for enforcement.[^2] As part of its Open Data initiative, the city provides access to the [311 database from 2010 to the present](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9), updated nightly.  Each call (or online submission) is logged with the time, nature of the complaint, and geovalidated location information on the site of the issue.
 
 [^2]: Generally, complaints about loud music, parties, and the like are routed to the police, while fixed noise sources (building machinery, nightclubs, etc.) with actionable limits are referred to the city's Department of Environmental Protection.
 
@@ -173,15 +182,17 @@ cdMap <- ggmap(nyc, darken = 0.6) +
 
 ```
 
-```{r showcdmap, include=TRUE, echo=FALSE, warning=FALSE, fig.cap="New York City's 59 community districts.", cache=FALSE, fig.width=5, fig.height=5}
+```{r showcdmap, include=TRUE, echo=FALSE, warning=FALSE, fig.cap="New York City's 59 community districts.", fig.width=5, fig.height=5}
 cdMap
 ```
 
 `r margin_note("These asking rents only circumstantially characterize wider housing costs. They represent what one might pay if forced to move in a given month---perhaps due to noise complaints.")`Finally, real estate database company Streeteasy publishes [aggregate sales and rental listing data](https://streeteasy.com/blog/data-dashboard/) for the New York City market.  Monthly median rents back to 2010 are available for most neighborhoods, as well as on a borough and citywide basis.
 
-Since local neighborhood boundaries are rather colloquially defined[^3], and are in any case not included with the Streeteasy figures, I had to manually match neighborhoods to the larger community districts.
+Since local neighborhood boundaries are rather colloquially defined[^3], and are in any case not included with the Streeteasy figures, I had to manually match listing neighborhoods to the larger community districts.
 
-[^3]: Not least by those in the real estate business, who often smear the desirable-neighborhood lipstick onto a pig of an apartment.
+[^3]: Not least by those in the real estate business, who can be inclined to smear the desirable-neighborhood lipstick onto a pig of an apartment.
+
+<a name="related"></a>
 
 ## Related Work
 
@@ -193,11 +204,11 @@ If the ins and outs of New York City noise complaints are of interest, a few rel
 
 # Methods & Analysis 
 
-`r newthought('For this analysis,')` I extracted the 311 database and rent information separately, using insights from each to guide their combination.
+`r newthought('For this analysis,')` I reviewed the 311 database and rent data separately, using insights from each to guide their combination.
 
 ## Noise Complaints, Individually
 
-To gather the 311 data, I used the [Socrata Open Data API](https://dev.socrata.com/) via R package `Rsocrata` to access all records with a permutation of "noise" in the complaint, discarding records about, for instance, malfunctioning street lights or poor taxi service.[^4]  This still yields nearly three million records, so I limited the fields to the timestamp, description, latitude/longitude, and community district, discarding entries that lacked usable or meaningful location.
+To gather the 311 data, I used the [Socrata Open Data API](https://dev.socrata.com/) via R package `Rsocrata` to access all records with a permutation of "noise" in the complaint, discarding records about, for instance, malfunctioning street lights or poor taxi service.[^4]  This still yields nearly three million records, so I limited the fields to the timestamp, description, latitude/longitude,  community district, and the channel used (phone/app/online), discarding entries that lacked usable or meaningful location.
 
 [^4]: The city collects these complaints because the taxi dispatch also tends to discard them.
 
@@ -239,7 +250,7 @@ heatMap <- ggmap(nyc, darken = 0.6) +
 
 ```
 
-```{r showheatmaps, echo=FALSE, cache=FALSE, include=TRUE, fig.fullwidth=TRUE, fig.height=5, fig.width=10, fig.cap="Complaint density in 2015 and 2018, highlighting Queens CD8."}
+```{r showheatmaps, echo=FALSE, include=TRUE, warning=FALSE, fig.fullwidth=TRUE, fig.height=5, fig.width=10, fig.cap="Complaint density in 2015 and 2018, highlighting Queens CD8."}
 heatMap
 
 ```
@@ -259,11 +270,10 @@ Drilling down inside this district, `r floor(sum(top2$pct))` percent of the 2018
 
 top2 %>% 
   knitr::kable(digits = c(4,4,0,0), col.names = c("Longitude","Latitude", "Complaints","% of Total"),
-               caption = "The top two complaint targets in Queens CD8, 2018.")
+               align = c('l','c','c','r'), caption = "The top two complaint targets in Queens CD8, 2018.")
 ```
 
-...and those complaints had overwhelmingly to do with alarms and horns.
-
+...and the complaints on those two locations had overwhelmingly to do with alarms and horns.
 
 ```{r queens08subj, echo=FALSE, include=TRUE}
 dfNoise %>% filter(year(created_date) == 2018 & community_board == "08 QUEENS") %>%
@@ -273,19 +283,14 @@ dfNoise %>% filter(year(created_date) == 2018 & community_board == "08 QUEENS") 
   summarize(complaints = n()) %>% 
   arrange(desc(complaints)) %>%
   select(descriptor, complaints) %>%  
-  knitr::kable(col.names = c("Descriptor","Complaints"),
-               caption = "The complaints about the top two targets.")
+  knitr::kable(col.names = c("Descriptor","Complaints"))
 ```
 
-`r margin_note("A common trajectory: the noise was always there, but new neighbors have different expectations.  There is unfortunately no way to extract whether this example describes new neighbors or old ones---nor many people complaining a little or one person complaining a lot.")`The first location, it turns out, is the EMS ambulance garage at Queens General Hospital.  The second is an FDNY firehouse.  Both were active long before 2018, or 2015, or in the case of the firehouse, 1928, so it's possible that one or more people simply started having a bigger problem with the sirens.
+`r margin_note("A common trajectory: the noise was always there, but new neighbors have different expectations.  There is unfortunately no way to extract whether this example describes new neighbors or old ones---nor many people complaining a little or one person complaining a lot.")`
 
-## Noise Complaints, in Aggregate
+The first location, it turns out, is the EMS ambulance garage at Queens General Hospital.  The second is an FDNY firehouse.  Both were active long before 2018, or 2015, or in the case of the firehouse, 1928, so it's possible that one or more people simply started having a bigger problem with the sirens.
 
-To advance the analysis, I folded the data into a total number of noise complaints for each month in each community district.  Because the districts vary, I normalized this into a complaint rate per 1000 residents based on the 2010 census counts.  For a bigger picture, we can also look to the monthly rate on a borough and citywide basis.
-
-The borough-level monthly complaint rate shows three immediate trends: a distinct seasonality within each year across all boroughs, a consistent ordering to complaint rates among the five boroughs, and a general increase in complaints with time.
-
-```{r gennbm, include=FALSE}
+```{r gennbm}
 #####
 # Assemble a reasonable benchmark rent for each community district.
 # We take the mean of all available neighborhood median rents in the district for that month.
@@ -296,16 +301,16 @@ The borough-level monthly complaint rate shows three immediate trends: a distinc
 cdRents <- hoodRents %>%
   left_join(hoodCD, by = "areaName") %>%
   group_by(cd) %>%
-  summarize_at(vars(starts_with("2")), funs(mean(., na.rm=TRUE))) %>%
+  summarize_at(vars(starts_with("2")), list(~mean(., na.rm=TRUE))) %>%
   gather(month, rent, -cd) %>% 
   spread(cd,rent) %>%
   mutate(`01 STATEN ISLAND` = boroRents$`STATEN ISLAND`,
          `02 STATEN ISLAND` = boroRents$`STATEN ISLAND`,
          `03 STATEN ISLAND` = boroRents$`STATEN ISLAND`) %>%
-  mutate_at(vars(ends_with("BRONX")), funs(if_else(is.nan(.), boroRents$BRONX, .))) %>%
-  mutate_at(vars(ends_with("BROOKLYN")), funs(if_else(is.nan(.), boroRents$BROOKLYN, .))) %>%
-  mutate_at(vars(ends_with("MANHATTAN")), funs(if_else(is.nan(.), boroRents$MANHATTAN, .))) %>%
-  mutate_at(vars(ends_with("QUEENS")), funs(if_else(is.nan(.), boroRents$QUEENS, .))) %>%
+  mutate_at(vars(ends_with("BRONX")), list(~if_else(is.nan(.), boroRents$BRONX, .))) %>%
+  mutate_at(vars(ends_with("BROOKLYN")), list(~if_else(is.nan(.), boroRents$BROOKLYN, .))) %>%
+  mutate_at(vars(ends_with("MANHATTAN")), list(~if_else(is.nan(.), boroRents$MANHATTAN, .))) %>%
+  mutate_at(vars(ends_with("QUEENS")), list(~if_else(is.nan(.), boroRents$QUEENS, .))) %>%
   mutate(month = as_date(parse_date_time(month, orders = "ym", tz = "America/New_York"))) 
 
 noiseCDMonth <- dfNoise %>% 
@@ -335,12 +340,19 @@ nbm <- noiseBoroMonth %>% ggplot(aes(x = month)) +
   scale_color_manual(values = boropal, name = "Borough")
   
 ```
+\pagebreak
 
-```{r shownbm, include=TRUE, echo=FALSE, fig.cap="Monthly complaint rates by borough.", cache=FALSE, fig.width=5, fig.height=5}
+## Noise Complaints, in Aggregate
+
+To advance the analysis, I folded the data into a total number of noise complaints for each month in each community district.  Because the districts vary, I normalized a complaint rate per 1000 residents based on the 2010 census.  
+
+For a bigger picture, we can also look to this population-normalized rate on a borough and citywide basis.  The borough-level monthly complaint rate shows three immediate trends: a distinct seasonality within each year across all boroughs, a consistent ordering to complaint rates among the five boroughs, and a general increase in complaints with time.
+
+```{r shownbm, include=TRUE, echo=FALSE, fig.cap="Monthly complaint rates by borough.", fig.width=5, fig.height=4}
 nbm
 ```
 
-The seasonality within each year has an intuitive pattern.  Complaint rates are higher in warmer months, since more people are outside or opening their windows, bars and restaurants are busier, and gatherings and music may spill out onto sidewalks or patios.  The pronounced dip in the middle of each summer and winter holiday may have to do with people leaving town on vacation when school is out.[^5]  The ordering of the boroughs follows from the heatmaps above: Manhattan leads the way in noise complaints, whether or not it leads in noise, followed by the Bronx, Brooklyn, Queens, and finally suburban Staten Island.  
+The seasonality within each year has an intuitive pattern.  Complaint rates are higher in warmer months, since more people are outside or opening their windows, and gatherings and music may spill out onto sidewalks or patios.  The pronounced dip in the middle of each summer and winter holiday may have to do with people leaving town on vacation when school is out.[^5]  The ordering of the boroughs follows from the heatmaps above: Manhattan leads the way in noise complaints, whether or not it leads in noise, followed by the Bronx, Brooklyn, Queens, and finally suburban Staten Island.  
 
 [^5]: Perhaps a greater number of tourists rush in to take their place, but they come here for the noise, not to file complaints about it.
 
@@ -364,15 +376,15 @@ The general increase in rate over the years is less intuitive.  It's unlikely th
 
 [^6]: Herald the electric vehicle: you may not hear it coming.
 
-```{r showchan, include=TRUE, echo=FALSE, fig.cap="Monthly complaints by channel: folks that disavow the phone when hiring a car or ordering pad thai probably complain the same way.", cache=FALSE, fig.width=3.5, fig.height=3.5, fig.margin=TRUE}
+The nature of the 311 system itself may also come into play, as awareness of its availability grew---and when its web and mobile channels began accepting complaints, it may have further raised utilization among a tech-native demographic.
+
+```{r showchan, include=TRUE, echo=FALSE, fig.cap="Monthly complaints by channel: folks that disavow the phone when hiring a car or ordering pad thai probably complain the same way.", fig.width=5, fig.height=4}
 chan
 ```
 
-The nature of the 311 system itself may also come into play, as awareness of its availability grew---and when its web and mobile channels began accepting complaints, it may have further raised utilization among a tech-native demographic.
-
 ## Median Rents
 
-Rolling in the median rent benchmark first requires some conversion from the neighborhood-level figures to wider community districts.  As an approximation, I assigned each district the average of the rents for its constituent neighborhoods, as listed at the [NYC Community Portal](https://communityprofiles.planning.nyc.gov/). 
+Rolling in the median rent benchmark first requires some conversion from the neighborhood-level figures to wider community districts.  As an approximation, I assigned each district the average of the rents for its constituent neighborhoods, as verified at the [NYC Community Portal](https://communityprofiles.planning.nyc.gov/). 
 
 Some neighborhoods span more than one district, so their rents factor more than once.  Where rent values are missing for all constituent neighborhoods in a district, the borough-wide median filled in for that month.[^7]  
 
@@ -389,49 +401,49 @@ boroRent <- noiseBoroMonth %>% na.omit() %>% ggplot(aes(x = month)) +
 
 Manhattan and Brooklyn represent the most active markets, with many data points and less variability than the remaining boroughs.  Again, rents exhibit a general increase over the period, whether from general inflation or recovery from the real estate bubble just prior, and seasonality with higher values in summer (more demand) than in winter.
 
-```{r showrent, include=TRUE, echo=FALSE, fig.cap="Monthly median rent by borough.", cache=FALSE, fig.width=5, fig.height=5}
+```{r showrent, include=TRUE, echo=FALSE, fig.cap="Monthly median rent by borough.", fig.width=5, fig.height=4}
 boroRent
 ```
 
 ## Complaint Rate vs. Rent
 
-Having assembled a complaint rate and a median rent benchmark for each month across every community district, I started by looking for a relationship between the two.  Pulling back to the borough level for a bigger picture, a scatter of all nine years of complaint/rent points begins to show some trends.
+Having assembled a complaint rate and a median rent benchmark for each month across every community district, I started by looking for a relationship between the two.  Pulling back to the borough level for a bigger picture, a scatter of all nine years of complaint/rent pairs illustrates some trends.
 
 ```{r genborosct}
 boroScatter<- noiseBoroMonth %>% na.omit() %>%
   ggplot(aes(x=rent, y = rate, color=factor(borough))) + 
   geom_point() + 
-  xlab("Median Rent ($)") + ylab("Complaints per 1000 people") + 
+  xlab("Monthly median rent ($)") + ylab("Monthly complaints per 1000 people") + 
   theme(legend.position = "bottom", legend.text = element_text(size = 8),
         legend.title = element_blank()) +
   scale_color_manual(values = boropal)
 ```
 
-```{r showborosct, include=TRUE, echo=FALSE, fig.cap="Noise complaint rate vs. monthly median rent.", cache=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+```{r showborosct, include=TRUE, echo=FALSE, fig.cap="Monthly complaint rate and rent by borough.", fig.width=10, fig.height=4, fig.fullwidth=TRUE}
 boroScatter
 ```
 
-While there are differences between the boroughs, a positive (but not exactly linear) correlation is apparent between complaint rate and rent within each borough.  While this seems intuitive---higher rents may reduce tolerance for noise, while simultaneously drawing the noisy nightlife and crowds that flock to up-and-coming neighborhoods---it's also a case of correlation not implying causation.  As discussed above, both the complaint rate and the rents show seasonality and growth with time that may or may not stem from the same causes.
+While there are differences between the boroughs, a positive (but not exactly linear) correlation is apparent between complaint rate and rent within each borough.  While this seems intuitive---higher rents may reduce tolerance for noise, while simultaneously drawing the noisy nightlife and crowds that flock to up-and-coming neighborhoods---it's also a case of correlation not proving causation.  As discussed above, both the complaint rate and the rents show seasonality and growth with time that may or may not stem from the same causes.
 
-Despite this apparent relationship bewteen complaints and rent in the wider borough view, will the same hold when filtered down to individual community districts? Taking Manhattan as an example, it does.
+Despite this apparent relationship between complaints and rent in the wider borough view, will the same hold when filtered down to individual community districts? Taking Manhattan's 12 community districts as an example, it does.
 
 ```{r genmanhsct}
 manScat <- noiseCDMonth %>% filter(borough == "MANHATTAN") %>% na.omit() %>%
   ggplot(aes(x = rent, y = rate, color = factor(str_sub(cd, end=2)))) + 
   geom_point() + xlab("Median Rent [USD]") + ylab("Complaints per 1000 people") + 
   labs(color="District") +
-  xlab("Median Rent ($)") + ylab("Complaints per 1000 people") + 
+  xlab("Monthly median rent ($)") + ylab("Monthly complaints per 1000 people") + 
   theme(legend.position = "right", legend.text = element_text(size = 8),
         legend.title = element_text(size = 8)) 
 ```
 
-```{r showmansct, include=TRUE, echo=FALSE, fig.cap="Noise complaint rate vs. monthly median rent in Manhattan's 12 community districts.", cache=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+```{r showmansct, include=TRUE, echo=FALSE, fig.cap="Monthly complaint rate and rent in Manhattan's 12 community districts.",fig.width=10, fig.height=4, fig.fullwidth=TRUE}
 manScat
 ```
 
-Again, while each individual district shows its own slope, there is a general positive correlation between monthly rent and monthly noise complaint rate.[^8]  The remaining boroughs show similar trends, though at a narrower range of rents.
+Again, while each individual district shows its own trend, there is a general positive correlation between monthly rent and monthly noise complaint rate.[^8]  The remaining boroughs show similar relationships, though at a narrower range of rents.
 
-[^8]: This slope describes a personality of sorts. Inwood, CD12 on the left? Sensible but complains a lot. Midtown, CD5 on the right? Extravagant and just as prone. Upper East Side, CD8 in the middle? Actually pretty laid back.
+[^8]: Each scatter describes a personality of sorts. Inwood, CD12 on the left? Sensible but complains a lot. Midtown, CD5 on the right? Extravagant and just as prone. Upper East Side, CD8 in the middle? Actually pretty laid back.
 
 Let's try to address the ultimate question that follows: what are the districts that combine affordable rent and a low complaint rate?  Taking this on for the most recent year of data, I tagged each district with its highest monthly rent and highest monthly complaint rate for 2018, producing a worst-case condition[^9] for comparison.
 
@@ -457,12 +469,12 @@ scatter2018 <- peaks2018 %>% ggplot(aes(x = rent, y = rate)) +
              label.padding = unit(.15,"lines"),
              color = "white",segment.color = "black") +
   scale_fill_manual(values = boropal, name = "Community\nDistrict #") +
-  labs(x = "Median Rent ($)", 
-       y = "Noise Complaints per 1000 People") 
+  labs(x = "Monthly median rent ($, Max 2018)", 
+       y = "Monthly complaints per 1000 people (Max 2018)") 
 
 ```
 
-```{r showworst, include=TRUE, echo=FALSE, fig.cap="Maximum monthly rent and complaint rate for each district, 2018.", cache=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+```{r showworst, include=TRUE, echo=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
 scatter2018
 ```
 
@@ -471,15 +483,89 @@ Brooklyn districts 11 (Bensonhurst, Gravesend) and 12 (Kensington, Borough Park)
 
 [^11]: As one does.
 
-Of course, we can't have nice things here for very long, and a good value very quickly becomes the same old grind once people find out and move there.[^12]  A model for predicing future noise complaint rates could prove pretty useful for the noise-sensitive and rent-averse, not to mention for the city agencies tasked with responding to noise complaints.
+Of course, we can't have nice things here for very long, and a good value very quickly becomes the same old grind once people find out and move there.[^12]  A model for predicting future noise complaint rates could prove pretty useful for the noise-sensitive and rent-averse, not to mention for the city agencies tasked with responding to noise complaints.
 
 [^12]: "Nobody goes there anymore. It's too crowded." --- Yogi Berra
 
 ## Modeling Approach
 
-# Modeling Results
+Based on these findings, I decided to try to predict the monthly complaint rate in an arbitrary month using the borough, community district, calendar month, and median rent as predictive features in a machine learning model.  Since the unknown month's median rent isn't going to be available in real time, I lagged the rent values by one month, effectively predicting one month's noise complaint rate using the prior month's known rent figures.  The district and borough account for local variation, and the calendar month should help track the seasonality.
+
+Trial and error revealed random forest regression to be a suitable machine learning model, which I optimized against root-mean-square error (RMSE) using the `Rborist` and `caret` R packages.  Including the `doParallel` package improved the execution time on a dual-core CPU.  The complaint and rent figures from 2010 through 2017 formed the training set, optimized using 25 bootstrap samples and the default 500 trees. The 2018 through present months became the test set for final evaluation of the model.  
+
+# Results
+
+```{r loadml}
+# Load the ML training results
+load("mlOutput.RData")
+```
+
+```{r genMAE}
+# Align the predicted rates with the true rates
+pSet <- as_tibble(cbind(testSet, pRate = rfTest))
+
+# Group them and determine an individual MAE for each CD
+pMAE <- pSet %>%  group_by(cd) %>% summarize(MAE = MAE(rate, pRate))
+
+# Histogram of CD-level MAE
+histMAE <- pMAE %>% ggplot(aes(MAE)) + geom_histogram(bins = 20) +
+  labs(x = "MAE", y = "Count")
+```
+
+```{r genCD6}
+CD6 <- pSet %>% filter(cd == "06 BROOKLYN") %>%
+  cbind(month = seq(as_date("2018-01-01"), as_date("2019-01-01"), by = "mon"))
+
+CD6MAE <- round(MAE(CD6$pRate, CD6$rate), 2)
+
+rateCD6 <- CD6 %>% ggplot(aes(x = month)) +
+  geom_line(aes(y = rate, color = "Actual"), size = 1) +
+  geom_line(aes(y = pRate, color = "Predicted"), size = 1, linetype = 2) +
+  labs(x = "Month", y = "Monthly complaints per 1000 people") +
+  theme(legend.position = "bottom", legend.text = element_text(size = 8),
+        legend.title = element_blank()) +
+  scale_color_manual(values = cbpal[-1])
+```
+
+`r newthought("The model training")` on the 2010-2017 data concluded with optimal `Rborist` tuning parameters of `r rfFit$bestTune$predFixed` randomly-selected predictors and a minimum node size of `r rfFit$bestTune$minNode`.  The resulting overall mean absolute error (MAE) in the 2018+ monthly noise complaint rates was `r round(rfMAE, 2)` complaints per 1000 people.
+
+Predicted and actual complaint rates for an example district (Brooklyn CD6, where I live) show a reasonable correspondence, and a local MAE of `r CD6MAE` complaints per 1000 people.
+
+```{r showCD6, include=TRUE, echo=FALSE, fig.cap=paste("Noise complaint rate prediction in the 2018+ test set for Brooklyn CD6 (MAE =", CD6MAE, ")."), fig.width=5, fig.height=4}
+rateCD6
+```
+
+```{r showMAE, include=TRUE, echo=FALSE, fig.width=3.5, fig.height=3.5, fig.margin=TRUE}
+histMAE
+```
+Looking into the distribution of mean absolute prediction error for the 59 individual community districts, the median value is `r round(as.numeric(summary(pMAE$MAE)[3]), 2)` complaints per 1000 people, and 75 percent of the values are less than `r round(as.numeric(summary(pMAE$MAE)[5]), 1)`. The top three outliers are
+
+```{r topMAE, echo=FALSE, include=TRUE}
+
+tabMAE <- pMAE %>% top_n(MAE, n = 3) %>% arrange(desc(MAE)) %>% 
+  mutate(cd = str_to_title(as.character(cd))) %>%
+  mutate(cd = paste("CD", str_remove(cd, "^0+"), sep = ""))
+  
+
+tabMAE %>% knitr::kable(digits = 1, col.names = c("Community District","MAE"))
+
+```
+
+Interestingly, the highest error outlier at `r round(tabMAE$MAE[1], 1)` complaints per 1000 people is Queens CD8---the very district that became extremely unhappy about its fire trucks and ambulances in 2018.  The next two are Manhattan CD12 and CD5, both identified earlier as having unusually high complaint rates compared to other districts.  It's possible that these districts are skewed by some outlying factor[^30] that makes projection of complaints less straightforward.
+
+[^30]: Again, we don't have access to the complaint source information, but this outlying factor may have a name and a well-trod speed dial.
+
+\pagebreak
 
 # Conclusion
+
+`r newthought("I left more than a few ")`interesting stones unturned in this analysis.  It's likely that the prediction model leaves room for improvement with more sophisticated or intensive algorithms, or with connection to unexplored sociogeographic datasets.  There is a wealth of data available about New York City's community districts, and there's no reason a finer resolution at the neighborhood level or lower wouldn't be possible with a little more finessing.  
+
+`r margin_note("I did attempt to predict each individual noise complaint. Unfortunately, the noise complaint landscape overwhelmingly tilts toward Party/Music gripes, which seem like the most likely outcome at any time of day or night in any corner of New York City. No model could do much better than simply predicing that every 311 noise complaint was likely to be about someone else's loud music.")`There may also be more useful outcomes to model than the complaint rate in each month; why not try to predict at the individual complaint level? Having an idea of the complaint descriptor or the agency with jurisdiction ahead of time might make the 311 intake system a little more efficient.
+
+Still, the relationship between noise complaints and housing cost proved to be interesting, revealing that while complaints do increase with rent, some parts of New York City just complain more than others, whether because of their actual soundscape or because of other factors (such as the diversity study mentioned in the [Related Work](#related)).  I expect that the insight I gained into these geographic variations will prove valuable the next time I have to find a new apartment.[^31]
+
+[^31]: In the time it has taken you to read this report I moved twice.
 
 # Acknowledgments
 
