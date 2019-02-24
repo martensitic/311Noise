@@ -102,6 +102,7 @@ dfCD <- dfCD %>% mutate(boro = factor(str_sub(boro_cd, end = 1), labels = boros)
 rm(args, caturl, token, url, dl, boros, rents)
 ```
 
+\vspace{15mm}
 
 > \
 > \
@@ -566,7 +567,7 @@ Interestingly, the highest error outlier at `r round(tabMAE$MAE[1], 1)` complain
 
 Still, the relationship between noise complaints and housing cost turned out to be interesting, revealing that while complaints do increase with rent, some parts of New York City just complain more than others, whether because of their actual soundscape or because of other factors (such as the diversity study mentioned in the [Related Work](#related)).  I expect that this geographic insight will prove valuable the next time I have to find a new apartment.[^31]
 
-[^31]: In the time it has taken you to read this report my rent went up twice.
+[^31]: In the time it has taken you to read this report, my rent went up twice.
 
 # Acknowledgments
 
